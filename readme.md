@@ -25,9 +25,12 @@
 	get  获取
 	save 保存
 	delte 删除
+	filter 筛选排序，暂未想好更优化的快速查询方法，待定
 	
 	
 多重数据结构：在value值那里写指向的key
+
+
 
 客户端请看：https://github.com/panyuan520/flyclient
 	
