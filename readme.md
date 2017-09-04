@@ -22,12 +22,13 @@
 
 
 请求数据结构规划：
-	get  针对key:value
-	lget 针对key:list 同list数据结构
-	hget 针对key:map 同map数据结构
-	delte 删除数据结构
+	get  获取
+	save 保存
+	delte 删除
 	
 	
 多重数据结构：在value值那里写指向的key
+
+客户端请看：https://github.com/panyuan520/flyclient
 	
 
