@@ -15,7 +15,7 @@ type Store struct {
 	ro    *db.ReadOptions
 	wo    *db.WriteOptions
 	db    *db.DB
-	cache *lru.Cache
+	cache *lru.ARCCache
 }
 
 func NewStore(path string, cache int, compress string) (*Store, error) {
@@ -26,7 +26,6 @@ func NewStore(path string, cache int, compress string) (*Store, error) {
 	switch compress {
 	case "snappy":
 		opts.SetCompression(db.SnappyCompression)
-
 	}
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -36,7 +35,7 @@ func NewStore(path string, cache int, compress string) (*Store, error) {
 	}
 
 	if rockdb, err := db.OpenDb(opts, path); err == nil {
-		lcache, _ := lru.New(cache)
+		lcache, _ := lru.NewARC(cache)
 		return &Store{
 			ro:    db.NewDefaultReadOptions(),
 			wo:    db.NewDefaultWriteOptions(),
@@ -48,66 +47,96 @@ func NewStore(path string, cache int, compress string) (*Store, error) {
 	}
 }
 
-func (this *Store) ParseCategory(value []byte) interface{} {
-	category := value[0]
-	content := value[1:]
-	switch category {
-	case byte('s'):
-		return string(content)
-	case byte('i'):
-		return BytesToInt64(content)
-	case byte('f'):
-		return BytesToFloat64(content)
-	case byte('l'):
-		return this.RangeElement(content)
-	case byte('m'):
-		return this.RangeKeyElement(content)
-	case byte('n'):
-		return ""
-	}
-	return nil
+func (this *Store) RangePrefix(key []byte) Eles {
+	eles := NewEles()
+	this.Iter(key, eles.Add)
+	return eles
 }
 
-func (this *Store) RangeElement(key []byte) Eles {
-	l := Eles{}
-	keys := bytes.Split(key, partitionMark)
-	for _, key := range keys {
-		if content, err := this.GetBytes(key); err == nil {
-			value4 := this.ParseCategory(content)
-			l = append(l, value4)
-		}
-	}
+func (this *Store) RangeElement(key []byte) Lt {
+	l := NewLt()
+	this.Ele(key, l.Add)
 	return l
 }
 
-func (this *Store) RangeKeyElement(key []byte) interface{} {
-	m := make(map[string]interface{})
+func (this *Store) RangeKeyElement(key []byte) Hh {
+	m := NewHh()
+	this.Ele(key, m.Add)
+	return m
+}
+
+type RangeCall func(index string, value interface{})
+
+func (this *Store) Ele(key []byte, fn RangeCall) {
 	keys := bytes.Split(key, partitionMark)
 	for _, key := range keys {
 		if content, err := this.GetBytes(key); err == nil {
-			keys := bytes.Split(key, delimiter)
-			if len(keys) > 0 {
-				value4 := this.ParseCategory(content)
-				m[string(keys[len(keys)-1])] = value4
+			if index := LastIndex(key); len(index) > 0 {
+				fn(index, this.Forward(content))
 			}
 		}
 	}
-	return m
+}
+
+type IterCall func(index string, bvalue []byte, ivalue interface{})
+
+func (this *Store) Iter(key []byte, fn IterCall) {
+	it := this.db.NewIterator(this.ro)
+	defer it.Close()
+	it.Seek(key)
+
+	for it = it; it.Valid(); it.Next() {
+		ckey := it.Key()
+		cvalue := it.Value()
+		vkey := ckey.Data()
+		vdata := cvalue.Data()
+		if bytes.HasPrefix(vkey, key) {
+			index := LastIndex(vkey)
+			fn(index, vdata[1:], this.Forward(vdata))
+		} else {
+			break
+		}
+		ckey.Free()
+		cvalue.Free()
+	}
+}
+
+func (this *Store) Forward(value []byte) interface{} {
+	if len(value) < 2 {
+		return nil
+	}
+	category := value[0]
+	content := value[1:]
+	switch category {
+	case ts:
+		return string(content)
+	case ti:
+		return BtI(content)
+	case tf:
+		return BtF(content)
+	case tl:
+		return this.RangeElement(content)
+	case tm:
+		return this.RangeKeyElement(content)
+	case tn:
+		return ""
+	}
+	return nil
 }
 
 func (this *Store) Save(key []byte, element interface{}) {
 	v := reflect.ValueOf(element)
 	switch v.Kind() {
 	case reflect.Bool:
-		this.XSet(key, strconv.FormatBool(v.Bool()), "b")
+		this.XSet(key, strconv.FormatBool(v.Bool()), tb)
 	case reflect.Int, reflect.Int8, reflect.Int32, reflect.Int64:
-		this.XSet(key, strconv.FormatInt(v.Int(), 10), "i")
+		this.XSet(key, strconv.FormatInt(v.Int(), 10), ti)
 	case reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint64:
-		this.XSet(key, strconv.FormatUint(v.Uint(), 10), "i")
+		this.XSet(key, strconv.FormatUint(v.Uint(), 10), ti)
 	case reflect.Float32, reflect.Float64:
-		this.XSet(key, strconv.FormatFloat(v.Float(), 'E', -1, 64), "f")
+		this.XSet(key, strconv.FormatFloat(v.Float(), 'E', -1, 64), tf)
 	case reflect.String:
-		this.XSet(key, v.String(), "s")
+		this.XSet(key, v.String(), ts)
 	case reflect.Slice, reflect.Array:
 		this.LAdd(key, v)
 	case reflect.Map:

@@ -15,7 +15,7 @@ func (this *Store) Get(key []byte) (interface{}, error) {
 	}
 	if value, error := this.db.GetBytes(this.ro, key); error == nil {
 		if len(value) > 0 {
-			content := this.ParseCategory(value)
+			content := this.Forward(value)
 			this.cache.Add(skey, content)
 			return content, nil
 		}
@@ -27,14 +27,14 @@ func (this *Store) Set(key []byte, val []byte) error {
 	return this.db.Put(this.wo, key, val)
 }
 
-func (this *Store) XSet(key []byte, content string, tip string) {
-	tips := []byte(tip)
+func (this *Store) XSet(key []byte, content string, tip byte) {
 	if len(content) == 0 {
-		tips = []byte("n")
+		tip = tn
 	}
-	contents := []byte(content)
-	tips = append(tips, contents...)
-	if err := this.Set(key, tips); err != nil {
+	value := []byte("")
+	value = append(value, tip)
+	value = append(value, []byte(content)...)
+	if err := this.Set(key, value); err != nil {
 		fmt.Println(err)
 	}
 }

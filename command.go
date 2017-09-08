@@ -65,7 +65,7 @@ func (this *Server) OF(conn net.Conn, key []byte) {
 	// key |skey1,key2,k3|ftable1|wkey1?=?1,key2?=?2|okey1?=?1
 	query := &Query{store: this.store}
 	query.Init(key)
-	content := query.filter()
+	content := query.Filter()
 	if marsher, err := this.marshaler(content); err == nil {
 		conn.Write(reply(marsher))
 	}

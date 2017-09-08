@@ -2,44 +2,26 @@ package main
 
 import (
 	"bytes"
-	"reflect"
-	"sort"
-	"strings"
 )
 
+type Filter struct {
+	column []byte
+	start  []byte
+	end    []byte
+	tip    []byte
+}
+
+type Order struct {
+	column []byte
+	desc   []byte
+}
+
 type Query struct {
-	Table  []byte
-	Keys   [][]byte
-	Output []string
-	Filter [][][]byte
-	Order  [][][]byte
-	store  *Store
-}
-
-func (this *Query) ParseSelect(content []byte) {
-	seqs := bytes.Split(content, comma)
-	for _, seq := range seqs {
-		this.Keys = append(this.Keys, seq)
-		this.Output = append(this.Output, string(seq))
-	}
-}
-
-func (this *Query) ParseWhere(content []byte) {
-	seqs := bytes.Split(content, comma)
-	for _, seq := range seqs {
-		wheres := bytes.Split(seq, questionMark)
-		this.Filter = append(this.Filter, wheres)
-		this.Keys = append(this.Keys, wheres[0])
-	}
-}
-
-func (this *Query) ParseOrder(content []byte) {
-	seqs := bytes.Split(content, comma)
-	for _, seq := range seqs {
-		orders := bytes.Split(seq, questionMark)
-		this.Order = append(this.Order, orders)
-		this.Keys = append(this.Keys, orders[0])
-	}
+	namespace []byte
+	output    [][]byte
+	where     []Filter
+	order     []Order
+	store     *Store
 }
 
 func (this *Query) Init(key []byte) {
@@ -49,158 +31,88 @@ func (this *Query) Init(key []byte) {
 		content := seq[1:]
 		switch category {
 		case byte('s'):
-			this.ParseSelect(content)
+			seqs := bytes.Split(content, comma)
+			for _, seq := range seqs {
+				this.output = append(this.output, seq)
+			}
 		case byte('f'):
-			this.Table = content
+			this.namespace = content
 		case byte('w'):
-			this.ParseWhere(content)
+			seqs := bytes.Split(content, comma)
+			for _, seq := range seqs {
+				wheres := bytes.Split(seq, questionMark)
+				if len(wheres) > 2 {
+					prefix := mergeTag5(this.namespace, wheres[0])
+					this.where = append(this.where, Filter{column: wheres[0], start: prefix, end: wheres[2], tip: wheres[1]})
+				}
+			}
 		case byte('o'):
-			this.ParseOrder(content)
-		}
-	}
-}
-
-type Eles []interface{}
-
-func (this Eles) Len() int                                  { return len(this) }
-func (this Eles) Swap(i, j int)                             { this[i], this[j] = this[j], this[i] }
-func (this Eles) Less(i, j int) bool                        { return this.Compare(this[i], this[j]) }
-func (this Eles) Compare(c interface{}, d interface{}) bool { return this.XCompare(c, d, less) }
-func (this Eles) XCompare(c interface{}, d interface{}, cp []byte) bool {
-	v := reflect.ValueOf(c)
-	v1 := reflect.ValueOf(d)
-	switch v.Kind() {
-	case reflect.Float64:
-		if compare(cp, equal, less) {
-			return v.Float() < v1.Float()
-		} else if compare(cp, equal, lessEqual) {
-			return v.Float() <= v1.Float()
-		}
-	case reflect.Uint:
-		if compare(cp, equal, less) {
-			return v.Uint() < v1.Uint()
-		} else if compare(cp, equal, lessEqual) {
-			return v.Uint() <= v1.Uint()
-		}
-	case reflect.Int:
-		if compare(cp, equal, less) {
-			return v.Int() < v1.Int()
-		} else if compare(cp, equal, lessEqual) {
-			return v.Int() <= v1.Int()
-		}
-	case reflect.String:
-		if compare(cp, equal, less) {
-			return strings.Compare(v.String(), v1.String()) == -1
-		} else if compare(cp, equal, lessEqual) {
-			return strings.Compare(v.String(), v1.String()) == -1 || strings.Compare(v.String(), v1.String()) == 0
-		}
-	}
-	return false
-}
-
-//func (this Eles) IndexIndex(index []byte) int {
-//	count := len(this)
-//	in := sort.Search(count, func(i int) bool { return this.XCompare(index, this[i].Index, lessEqual) })
-//	if in < count {
-//		if compare(this[in].Index, equal, index) {
-//			return in
-//		}
-//	}
-//	return count
-//}
-func (this Eles) ValueIndex(comp, tag []byte) (int, int, int) {
-	in := sort.Search(len(this), func(i int) bool { return this.XCompare(tag, this[i], lessEqual) })
-	start := 0
-	end := 0
-	if in < len(this) {
-		if compare(comp, equal, equal) {
-			start = in
-			end = in
-		} else if compare(comp, equal, less) {
-			start = 0
-			end = in
-
-		} else if compare(comp, equal, lessEqual) {
-			start = 0
-			end = in
-			if this.XCompare(this[in], tag, equal) {
-				end = in + 1
+			seqs := bytes.Split(content, comma)
+			for _, seq := range seqs {
+				orders := bytes.Split(seq, questionMark)
+				if len(orders) > 1 {
+					prefix := mergeTag5(this.namespace, orders[0])
+					this.order = append(this.order, Order{column: prefix, desc: orders[1]})
+				}
 			}
-		} else if compare(comp, equal, greater) {
-			start = in
-			end = len(this)
-			if this.XCompare(this[in], tag, equal) {
-				start = in + 1
-			}
-		} else if compare(comp, equal, greaterEqual) {
-			start = in
-			end = len(this)
 		}
 	}
-	return in, start, end
 }
 
-func (this *Query) filter() interface{} {
-	//开始设置需要处理的数据
-	backends := map[string]Eles{}
-	for _, key := range this.Keys {
-		skey := string(key)
-		if _, ok := backends[skey]; !ok {
-			key2 := mergeTag4(this.Table, key)
-			backends[skey] = this.store.RangeElement(key2)
+func (this *Query) Get(key []byte) Eles {
+	skey := string(mergeTag3(key, cindex))
+	if eles, ok := this.store.cache.Get(skey); ok {
+		return eles.(Eles)
+	}
+	eles := this.store.RangePrefix(key)
+	this.store.cache.Add(skey, eles)
+	return eles
+}
+
+func (this *Query) Where() Ids {
+	ids := Ids{}
+	for _, where := range this.where {
+		eles := this.Get(where.start)
+		if index := eles.Search(where.end, where.tip); index < len(eles.Key) {
+			ids.extend(eles.Key[0 : index+1])
+		} else {
+			ids = Ids{}
+			break
 		}
 	}
-	//	tree := Orders{}
-	//	for step, tags := range this.Filter {
-	//		if backend, ok := backends[string(tags[0])]; ok {
-	//			if in, start, end := backend.L.ValueIndex(tags[1], tags[2]); in < len(backend.L) {
-	//				backend2 := backend.L[start:end]
-	//				if step == 0 {
-	//					tree.L = append(tree.L, backend2...)
-	//				} else {
-	//					tree2 := Orders{}
-	//					for _, bk := range backend2 {
-	//						if in := tree.L.IndexIndex(bk.Index); in < len(tree.L) {
-	//							tree2.L = append(tree2.L, bk)
-	//						}
-	//					}
-	//					tree = tree2
-	//				}
-	//			} else {
-	//				tree = Orders{}
-	//				break
-	//			}
-	//		}
-	//	}
-	//	//需要返回的数据
-	//	outputs := map[string][][]byte{}
-	//	if len(this.Filter) > 0 && len(tree.L) == 0 {
-	//		return outputs
-	//	}
-	//	//开始设置排序
-	//	orders := Orders{}
-	//	for _, tags := range this.Order {
-	//		if backend, ok := backends[string(tags[0])]; ok {
-	//			for _, item := range tree.L {
-	//				orders.L = append(orders.L, Ele{Index: item.Index, Value: backend.M[string(item.Index)]})
-	//			}
-	//			if compare(tags[1], equal, one) {
-	//				sort.Sort(sort.Reverse(orders.L))
-	//			} else {
-	//				sort.Sort(orders.L)
-	//			}
-	//		}
-	//	}
-	//	//开始输出数据
-	//	for _, key := range this.Output {
-	//		if backend, ok := backends[key]; ok {
-	//			tmp := [][]byte{}
-	//			for _, ele := range orders.L {
-	//				tmp = append(tmp, backend.M[string(ele.Index)])
-	//			}
-	//			outputs[key] = tmp
-	//		}
-	//	}
-	//	return outputs
-	return nil
+	return ids
+}
+
+func (this *Query) Order(ids Ids) []string {
+	for _, order := range this.order {
+		beles := NewEles()
+		eles := this.Get(order.column)
+		for index, _ := range ids {
+			beles.Add(index, eles.Bvalue[index], eles.Ivalue[index])
+		}
+		if compare(order.desc, equal, []byte("1")) {
+			beles.Sort()
+		} else {
+			beles.Reverse()
+		}
+		return beles.Key
+	}
+	return []string{}
+}
+
+func (this *Query) Filter() interface{} {
+	ids := this.Where()
+	indexs := this.Order(ids)
+	backend := map[string][]interface{}{}
+	for _, out := range this.output {
+		tmp := []interface{}{}
+		prefix := mergeTag5(this.namespace, out)
+		eles := this.Get(prefix)
+		for _, index := range indexs {
+			tmp = append(tmp, eles.Ivalue[index])
+		}
+		backend[string(out)] = tmp
+
+	}
+	return backend
 }
