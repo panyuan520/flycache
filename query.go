@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"sort"
 )
 
 type Filter struct {
@@ -59,14 +60,17 @@ func (this *Query) Init(key []byte) {
 	}
 }
 
-func (this *Query) Get(key []byte) Eles {
-	skey := string(mergeTag3(key, cindex))
-	if eles, ok := this.store.cache.Get(skey); ok {
-		return eles.(Eles)
+func (this *Query) Get(key []byte) Lt {
+	skey := string(key)
+	if lt, ok := this.store.cache.Get(skey); ok {
+		return lt
 	}
-	eles := this.store.RangePrefix(key)
-	this.store.cache.Add(skey, eles)
-	return eles
+	if content, err := this.store.GetBytes(key); err == nil {
+		lt := this.store.Forward(content)
+		this.store.cache.Add(skey, lt)
+		return lt
+	}
+	return Lt{}
 }
 
 func (this *Query) Where() Ids {

@@ -44,6 +44,8 @@ func (this *Server) handle(conn net.Conn, message []byte) {
 
 func (this *Server) recvCommand(conn net.Conn) {
 	scanner := bufio.NewScanner(conn)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
 	scanner.Split(crunchSplitFunc)
 	for scanner.Scan() {
 		content := scanner.Bytes()

@@ -81,23 +81,13 @@ func (this *Store) Ele(key []byte, fn RangeCall) {
 type IterCall func(index string, bvalue []byte, ivalue interface{})
 
 func (this *Store) Iter(key []byte, fn IterCall) {
-	it := this.db.NewIterator(this.ro)
-	defer it.Close()
-	it.Seek(key)
-
-	for it = it; it.Valid(); it.Next() {
-		ckey := it.Key()
-		cvalue := it.Value()
-		vkey := ckey.Data()
-		vdata := cvalue.Data()
-		if bytes.HasPrefix(vkey, key) {
-			index := LastIndex(vkey)
-			fn(index, vdata[1:], this.Forward(vdata))
-		} else {
-			break
+	keys := bytes.Split(key, partitionMark)
+	for _, key := range keys {
+		if content, err := this.GetBytes(key); err == nil {
+			if index := LastIndex(key); len(index) > 0 {
+				fn(index, content[1:], this.Forward(content))
+			}
 		}
-		ckey.Free()
-		cvalue.Free()
 	}
 }
 

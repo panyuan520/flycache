@@ -32,7 +32,7 @@ func mergeTag4(tip1 []byte, tip3 []byte) []byte {
 }
 
 func mergeTag5(tip1 []byte, tip2 []byte) []byte {
-	return bytes.Join([][]byte{tip1, delimiter, tip2, delimiter}, blank)
+	return bytes.Join([][]byte{tip1, delimiter, tip2}, blank)
 }
 
 func LastIndex(key []byte) string {

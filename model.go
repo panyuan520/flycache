@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"sort"
 )
 
@@ -32,9 +33,15 @@ func (this *Eles) Search(x []byte, tip []byte) int {
 	if compare(tip, equal, less) || compare(tip, equal, lessEqual) {
 		sort.Sort(this)
 		index = sort.Search(len(this.Value), func(i int) bool { return compare(x, lessEqual, this.Value[i]) })
+		for _, i := range this.Value {
+			fmt.Println("debug1", string(i))
+		}
 	} else if compare(tip, equal, greater) || compare(tip, equal, greaterEqual) {
 		sort.Sort(sort.Reverse(this))
 		index = sort.Search(len(this.Value), func(i int) bool { return compare(x, greaterEqual, this.Value[i]) })
+		for _, i := range this.Value {
+			fmt.Println("debug2", string(i))
+		}
 	}
 	if index < len(this.Value) && !bytes.HasSuffix(tip, []byte("=")) && compare(this.Value[index], equal, x) {
 		index -= 1
@@ -82,8 +89,8 @@ func (this Ids) extend(indexs []string) {
 
 type Lt []interface{}
 
-func (this Lt) Add(index string, value interface{}) {
-	this = append(this, value)
+func (this *Lt) Add(index string, value interface{}) {
+	*this = append(*this, value)
 }
 
 func NewLt() Lt {
