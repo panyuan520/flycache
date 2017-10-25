@@ -37,3 +37,14 @@
 
 客户端请看：https://github.com/panyuan520/flyclient
 	
+
+
+1:0
+1:7
+2:1
+3:2
+3:3
+3:6
+4:4
+5:5
+8:8

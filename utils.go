@@ -3,10 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
-	"math"
 
+	"math"
 	"strconv"
+
+	"github.com/vmihailenco/msgpack"
 )
 
 func reply(messge []byte) []byte {
@@ -35,6 +36,17 @@ func mergeTag5(tip1 []byte, tip2 []byte) []byte {
 	return bytes.Join([][]byte{tip1, delimiter, tip2}, blank)
 }
 
+func mergeTag6(first byte, last string) []byte {
+	tmp := []byte("")
+	tmp = append(tmp, first)
+	tmp = append(tmp, []byte(last)...)
+	return tmp
+}
+
+func mergeTag7(first []byte, last []byte) []byte {
+	return bytes.Join([][]byte{first, last}, blank)
+}
+
 func LastIndex(key []byte) string {
 	indexs := bytes.Split(key, delimiter)
 	if len(indexs) > 0 {
@@ -43,55 +55,79 @@ func LastIndex(key []byte) string {
 	return ""
 }
 
-func BtI(buf []byte) int64 {
-	if s, err := strconv.ParseInt(string(buf), 10, 32); err == nil {
-		return s
-	}
-	return 0
+func S2B(s string) []byte {
+	return []byte(s)
 }
 
-func BtF(bytes []byte) float64 {
-	float, err := strconv.ParseFloat(string(bytes), 64)
-	if err != nil {
-		fmt.Println(err)
-	}
-	return float
+func B2S(b []byte) string {
+	return string(b)
 }
 
-func FtB(float float64) []byte {
+func F32B(float float32) []byte {
+	bits := math.Float32bits(float)
+	bytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(bytes, bits)
+	return bytes
+}
+
+func B2F32(bytes []byte) float32 {
+	bits := binary.LittleEndian.Uint32(bytes)
+	return math.Float32frombits(bits)
+}
+
+func F642B(float float64) []byte {
 	bits := math.Float64bits(float)
 	bytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(bytes, bits)
 	return bytes
 }
 
+func B2F64(bytes []byte) float64 {
+	bits := binary.LittleEndian.Uint64(bytes)
+	return math.Float64frombits(bits)
+}
+
+func BtI(buf []byte) int {
+	if i, err := strconv.Atoi(string(buf)); err == nil {
+		return i
+	}
+	return 0
+}
+
+func ItS(value int) string {
+	return strconv.Itoa(value)
+}
+
+func ItB(value int) []byte {
+	return []byte(ItS(value))
+}
+
 func compare(value []byte, tip []byte, tag []byte) bool {
-	if bytes.Compare(equal, tip) == 0 && bytes.Compare(value, tag) == 0 {
+	if bytes.Equal(equal, tip) && bytes.Compare(value, tag) == 0 {
 		return true
-	} else if bytes.Compare(greater, tip) == 0 && bytes.Compare(value, tag) > 0 {
+	} else if bytes.Equal(greater, tip) && bytes.Compare(value, tag) == 1 {
 		return true
-	} else if bytes.Compare(greaterEqual, tip) == 0 && bytes.Compare(value, tag) >= 0 {
+	} else if bytes.Equal(greaterEqual, tip) && bytes.Compare(value, tag) >= 0 {
 		return true
-	} else if bytes.Compare(less, tip) == 0 && bytes.Compare(value, tag) < 0 {
+	} else if bytes.Equal(less, tip) && bytes.Compare(value, tag) == -1 {
 		return true
-	} else if bytes.Compare(lessEqual, tip) == 0 && bytes.Compare(value, tag) <= 0 {
+	} else if bytes.Equal(lessEqual, tip) && bytes.Compare(value, tag) <= 0 {
 		return true
 	}
 	return false
 }
 
-func crunchSplitFunc(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
+func marshaler(value interface{}) ([]byte, bool) {
+	if b, err := msgpack.Marshal(value); err == nil {
+		return b, true
 	}
+	return nil, false
+}
 
-	if i := bytes.Index(data, delimit); i >= 0 {
-		return i + 2, data[0:i], nil
+func unmarshaler(value []byte, model Modelx) (Modelx, bool) {
+	if err := msgpack.Unmarshal(value, &model); err == nil {
+		//开始校验数据
+		return model, true
 	}
-
-	if atEOF {
-		return len(data), data, nil
-	}
-
-	return
+	return nil, false
 }

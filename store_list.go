@@ -1,10 +1,12 @@
 package main
 
+/**
 import (
 	"bytes"
 	"reflect"
 	"strconv"
 )
+
 
 func (this *Store) LAdd(key []byte, v reflect.Value) {
 	l := v.Len()
@@ -17,3 +19,4 @@ func (this *Store) LAdd(key []byte, v reflect.Value) {
 	key4 := bytes.Join(keys, partitionMark)
 	this.Set(key, mergeTag("l", key4))
 }
+*/

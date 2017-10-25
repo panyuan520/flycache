@@ -2,10 +2,8 @@ package main
 
 import (
 	"bytes"
-	"fmt"
+
 	"os"
-	"reflect"
-	"strconv"
 
 	lru "github.com/hashicorp/golang-lru"
 	db "github.com/tecbot/gorocksdb"
@@ -47,48 +45,48 @@ func NewStore(path string, cache int, compress string) (*Store, error) {
 	}
 }
 
-func (this *Store) RangePrefix(key []byte) Eles {
-	eles := NewEles()
-	this.Iter(key, eles.Add)
-	return eles
-}
-
-func (this *Store) RangeElement(key []byte) Lt {
-	l := NewLt()
-	this.Ele(key, l.Add)
-	return l
-}
-
-func (this *Store) RangeKeyElement(key []byte) Hh {
-	m := NewHh()
-	this.Ele(key, m.Add)
-	return m
-}
-
-type RangeCall func(index string, value interface{})
-
-func (this *Store) Ele(key []byte, fn RangeCall) {
-	keys := bytes.Split(key, partitionMark)
-	for _, key := range keys {
-		if content, err := this.GetBytes(key); err == nil {
-			if index := LastIndex(key); len(index) > 0 {
-				fn(index, this.Forward(content))
-			}
+func (this *Store) ele(category byte, key []byte) interface{} {
+	hh := NewHh(category)
+	it := this.db.NewIterator(this.ro)
+	key = mergeTag3(key, blank)
+	it.Seek(key)
+	defer it.Close()
+	for it = it; it.ValidForPrefix(key); it.Next() {
+		key := it.Key()
+		dkey := key.Data()
+		value := it.Value()
+		dvalue := value.Data()
+		category := dvalue[0]
+		if category != tl && category != tm {
+			hh.add(dkey, this.Forward(dvalue))
+		} else {
+			keys := bytes.Split(dvalue[1:], partitionMark)
+			hh.addNode(dkey, category, BtI(keys[1]))
 		}
+		key.Free()
+		value.Free()
 	}
+	return hh.data
 }
 
-type IterCall func(index string, bvalue []byte, ivalue interface{})
+func (this *Store) loop(start []byte, end []byte, filter map[int][]byte) []interface{} {
+	it := this.db.NewIterator(this.ro)
+	it.Seek(start)
+	defer it.Close()
+	hh := []interface{}{}
+	for it = it; it.ValidForPrefix(end); it.Next() {
+		//key := it.Key()
+		//dkey := key.Data()
+		value := it.Value()
+		dvalue := value.Data()
+		//if _, ok := filter[dkey]; ok {
+		hh = append(hh, this.Forward(dvalue))
 
-func (this *Store) Iter(key []byte, fn IterCall) {
-	keys := bytes.Split(key, partitionMark)
-	for _, key := range keys {
-		if content, err := this.GetBytes(key); err == nil {
-			if index := LastIndex(key); len(index) > 0 {
-				fn(index, content[1:], this.Forward(content))
-			}
-		}
+		//}
+		//key.Free()
+		value.Free()
 	}
+	return hh
 }
 
 func (this *Store) Forward(value []byte) interface{} {
@@ -103,35 +101,37 @@ func (this *Store) Forward(value []byte) interface{} {
 	case ti:
 		return BtI(content)
 	case tf:
-		return BtF(content)
+		return B2F32(content)
 	case tl:
-		return this.RangeElement(content)
+		return this.ele(tl, content)
 	case tm:
-		return this.RangeKeyElement(content)
+		return this.ele(tm, content)
 	case tn:
 		return ""
 	}
 	return nil
 }
 
-func (this *Store) Save(key []byte, element interface{}) {
-	v := reflect.ValueOf(element)
-	switch v.Kind() {
-	case reflect.Bool:
-		this.XSet(key, strconv.FormatBool(v.Bool()), tb)
-	case reflect.Int, reflect.Int8, reflect.Int32, reflect.Int64:
-		this.XSet(key, strconv.FormatInt(v.Int(), 10), ti)
-	case reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint64:
-		this.XSet(key, strconv.FormatUint(v.Uint(), 10), ti)
-	case reflect.Float32, reflect.Float64:
-		this.XSet(key, strconv.FormatFloat(v.Float(), 'E', -1, 64), tf)
-	case reflect.String:
-		this.XSet(key, v.String(), ts)
-	case reflect.Slice, reflect.Array:
-		this.LAdd(key, v)
-	case reflect.Map:
-		this.MAdd(key, v)
-	default:
-		fmt.Println(v.Kind(), "type not fund")
+func (this *Store) Save(key []byte, element interface{}) bool {
+	if cvv, ok := element.([]byte); ok {
+		return this.Set(key, cvv)
+	} else if sl, ok := element.(SL); ok {
+		tmp := NewIndex(sl.category)
+		for step := 0; step < len(sl.data); step++ {
+			index := sl.index[step]
+			this.Save(mergeTag2(key, ItS(index)), sl.data[step])
+			tmp.add(sl.old_data[step], index)
+		}
+		value := bytes.Join([][]byte{mergeTag("l", key), ItB(len(sl.data))}, partitionMark)
+		this.Save(key, value)
+		//开始插入索引只
+		this.Save(mergeTag("tmp", key), tmp.dump())
+		return true
+	} else if ml, ok := element.(map[string]interface{}); ok {
+		for key2, value := range ml {
+			this.Save(mergeTag2(key, key2), value)
+		}
+		return this.Save(key, mergeTag("m", key))
 	}
+	return false
 }

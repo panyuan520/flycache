@@ -19,12 +19,17 @@ func (this *Store) Get(key []byte) (interface{}, error) {
 			this.cache.Add(skey, content)
 			return content, nil
 		}
+	} else {
+		fmt.Println("err", error)
 	}
 	return nil, nil
 }
 
-func (this *Store) Set(key []byte, val []byte) error {
-	return this.db.Put(this.wo, key, val)
+func (this *Store) Set(key []byte, val []byte) bool {
+	if err := this.db.Put(this.wo, key, val); err != nil {
+		return false
+	}
+	return true
 }
 
 func (this *Store) XSet(key []byte, content string, tip byte) {
@@ -34,9 +39,7 @@ func (this *Store) XSet(key []byte, content string, tip byte) {
 	value := []byte("")
 	value = append(value, tip)
 	value = append(value, []byte(content)...)
-	if err := this.Set(key, value); err != nil {
-		fmt.Println(err)
-	}
+	this.Set(key, value)
 }
 
 func (this *Store) DeleteRange(key []byte) {

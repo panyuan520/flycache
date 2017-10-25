@@ -2,106 +2,170 @@ package main
 
 import (
 	"bytes"
-	"fmt"
+
+	"reflect"
 	"sort"
+	"strconv"
 )
 
-type Eles struct {
-	Key    []string
-	Value  [][]byte
-	Ivalue map[string]interface{}
-	Bvalue map[string][]byte
+type Hh struct {
+	data  interface{}
+	proxy interface{}
 }
 
-func (this *Eles) Len() int { return len(this.Key) }
-func (this *Eles) Swap(i, j int) {
-	this.Key[i], this.Key[j] = this.Key[j], this.Key[i]
-	this.Value[i], this.Value[j] = this.Value[j], this.Value[i]
-}
-func (this *Eles) Less(i, j int) bool              { return this.Compare(this.Value[i], this.Value[j]) }
-func (this *Eles) Compare(c []byte, d []byte) bool { return compare(c, less, d) }
-
-func (this *Eles) Sort() {
-	sort.Sort(this)
-}
-func (this *Eles) Reverse() {
-	sort.Sort(sort.Reverse(this))
-}
-
-func (this *Eles) Search(x []byte, tip []byte) int {
-	index := len(this.Key) + 1
-	if compare(tip, equal, less) || compare(tip, equal, lessEqual) {
-		sort.Sort(this)
-		index = sort.Search(len(this.Value), func(i int) bool { return compare(x, lessEqual, this.Value[i]) })
-		for _, i := range this.Value {
-			fmt.Println("debug1", string(i))
-		}
-	} else if compare(tip, equal, greater) || compare(tip, equal, greaterEqual) {
-		sort.Sort(sort.Reverse(this))
-		index = sort.Search(len(this.Value), func(i int) bool { return compare(x, greaterEqual, this.Value[i]) })
-		for _, i := range this.Value {
-			fmt.Println("debug2", string(i))
-		}
+func (this *Hh) createNode(category byte, count int) interface{} {
+	if category == tl {
+		return make([]interface{}, count)
 	}
-	if index < len(this.Value) && !bytes.HasSuffix(tip, []byte("=")) && compare(this.Value[index], equal, x) {
-		index -= 1
-	}
-	return index
+	return map[string]interface{}{}
 }
 
-func (this *Eles) Match(x []byte) int {
-	i := this.Search(x, lessEqual)
-	if i < len(this.Value) && compare(this.Value[i], equal, x) {
-		return i
-	}
-	return -1
-}
-
-func (this *Eles) Add(key string, value []byte, ivalue interface{}) {
-	skey := string(key)
-	this.Key = append(this.Key, skey)
-	this.Value = append(this.Value, value)
-	this.Ivalue[skey] = ivalue
-	this.Bvalue[skey] = value
-}
-
-func NewEles() Eles {
-	return Eles{Key: []string{}, Value: [][]byte{}, Ivalue: map[string]interface{}{}, Bvalue: map[string][]byte{}}
-}
-
-type Ids map[string]int
-
-func (this Ids) extend(indexs []string) {
-	if len(this) == 0 {
-		for step, index := range indexs {
-			this[index] = step
+func (this *Hh) add(key []byte, data interface{}) bool {
+	keys := bytes.Split(key, delimiter)
+	subkey := string(keys[len(keys)-1])
+	if value, ok := this.proxy.([]interface{}); ok {
+		if step, err := strconv.Atoi(subkey); err == nil {
+			value[step] = data
+		} else {
+			return false
 		}
-	} else {
-		ids := Ids{}
-		for _, index := range indexs {
-			if cid, ok := this[index]; ok {
-				ids[index] = cid
+
+	} else if value, ok := this.proxy.(map[string]interface{}); ok {
+		value[subkey] = data
+	}
+	return true
+}
+
+func (this *Hh) addNode(key []byte, category byte, total int) {
+	keys := bytes.Split(key, delimiter)
+	count := len(keys)
+	ele := this.data
+	for step := 1; step < count; step++ {
+		skey := string(keys[step])
+		if value, ok := ele.([]interface{}); ok {
+			index := BtI(keys[step])
+			value[index] = this.createNode(category, total)
+			ele = value
+		} else if value, ok := ele.(map[string]interface{}); ok {
+			if value2, ok2 := value[skey]; !ok2 {
+				value[skey] = this.createNode(category, total)
+				ele = value[skey]
+			} else {
+				ele = value2
 			}
 		}
-		this = ids
 	}
+	this.proxy = ele
 }
 
-type Lt []interface{}
-
-func (this *Lt) Add(index string, value interface{}) {
-	*this = append(*this, value)
+func NewHh(category byte) Hh {
+	if category == tl {
+		return Hh{data: []interface{}{}, proxy: nil}
+	}
+	return Hh{data: map[string]interface{}{}, proxy: nil}
 }
 
-func NewLt() Lt {
-	return Lt{}
+//创建索引表数据
+type Index struct {
+	data [][]byte
 }
 
-type Hh map[string]interface{}
-
-func (this Hh) Add(index string, value interface{}) {
-	this[index] = value
+func (this *Index) loop(value []byte) int {
+	return sort.Search(len(this.data), func(i int) bool { return compare(this.data[i], greaterEqual, value) })
 }
-func NewHh() Hh {
-	return Hh{}
+
+func (this *Index) dump() []byte {
+	return bytes.Join(this.data, partitionMark)
+}
+
+func (this *Index) add(data []byte, step int) {
+	this.data = append(this.data, bytes.Join([][]byte{data, ItB(step)}, delimiter))
+}
+
+func NewIndex(category byte) *Index {
+	return &Index{data: [][]byte{[]byte{category}}}
+}
+
+//以有序数据来插入
+type SL struct {
+	data     [][]byte
+	old_data [][]byte
+	index    []int
+	category byte
+}
+
+func (this SL) Len() int { return len(this.data) }
+func (this SL) Swap(i, j int) {
+	this.data[i], this.data[j] = this.data[j], this.data[i]
+	this.index[i], this.index[j] = this.index[j], this.index[i]
+	this.old_data[i], this.old_data[j] = this.old_data[j], this.old_data[i]
+}
+func (this SL) Less(i, j int) bool { return bytes.Compare(this.old_data[i], this.old_data[j]) == -1 }
+
+func NewSL(tmp [][]byte) SL {
+	indexs := []int{}
+	old_data := [][]byte{}
+	category := tf
+	for index, item := range tmp {
+		indexs = append(indexs, index)
+		old_data = append(old_data, item[1:len(item)])
+		category = item[0]
+	}
+	sl := SL{data: tmp, index: indexs, old_data: old_data, category: category}
+	sort.Sort(sl)
+	return sl
+}
+
+//自定义插入数据
+type Modelx interface{}
+
+//开始校验数据
+func valid(element interface{}) (interface{}, bool) {
+	v := reflect.ValueOf(element)
+	switch v.Kind() {
+	case reflect.Bool:
+		return mergeTag6(tb, strconv.FormatBool(v.Bool())), true
+	case reflect.Int, reflect.Int8, reflect.Int32, reflect.Int64:
+		return mergeTag6(ti, strconv.FormatInt(v.Int(), 10)), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint64:
+		return mergeTag6(ti, strconv.FormatUint(v.Uint(), 10)), true
+	case reflect.Float32, reflect.Float64:
+		return mergeTag6(tf, strconv.FormatFloat(v.Float(), 'E', -1, 64)), true
+	case reflect.String:
+		vs := v.String()
+		if len(vs) > 0 {
+			return mergeTag6(ts, v.String()), true
+		} else {
+			return mergeTag6(tn, v.String()), true
+		}
+	case reflect.Slice, reflect.Array: //循环遍历列表list
+		l := v.Len()
+		tmp := [][]byte{}
+		for i := 0; i < l; i++ {
+			if cv, ok := valid(v.Index(i).Interface()); ok {
+				if ccv, ok := cv.([]byte); ok {
+					tmp = append(tmp, ccv)
+				} else {
+					return v, false
+				}
+			} else {
+				return v, false
+			}
+		}
+		return NewSL(tmp), true
+
+	case reflect.Map: //遍历Map数据值
+		tmp := map[string]interface{}{}
+		for _, i := range v.MapKeys() {
+			if mv, ok := valid(v.MapIndex(i).Interface()); ok {
+				tmp[i.String()] = mv
+			} else {
+				return v, false
+			}
+		}
+		return tmp, true
+	default:
+		return element, false
+	}
+	return element, false
 }

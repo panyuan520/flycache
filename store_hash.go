@@ -1,9 +1,11 @@
 package main
 
+/**
 import (
 	"bytes"
 	"reflect"
 )
+
 
 func (this *Store) MAdd(key []byte, v reflect.Value) {
 	l := [][]byte{}
@@ -15,3 +17,4 @@ func (this *Store) MAdd(key []byte, v reflect.Value) {
 	ls := bytes.Join(l, partitionMark)
 	this.Set(key, mergeTag("m", ls))
 }
+*/

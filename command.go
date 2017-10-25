@@ -2,26 +2,17 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net"
-
-	"github.com/vmihailenco/msgpack"
 )
-
-type Modelx interface{}
-
-func (this *Server) marshaler(content interface{}) ([]byte, error) {
-	if b, err := msgpack.Marshal(content); err == nil {
-		return b, nil
-	} else {
-		return nil, err
-	}
-}
 
 func (this *Server) OG(conn net.Conn, key []byte) {
 	//针对key:value获取
 	if content, err := this.store.Get(key); err == nil {
-		if marsher, err := this.marshaler(content); err == nil {
+		if marsher, ok := marshaler(content); ok {
 			conn.Write(reply(marsher))
+		} else {
+			fmt.Println(err)
 		}
 	} else {
 		conn.Write(reply([]byte("0")))
@@ -30,14 +21,21 @@ func (this *Server) OG(conn net.Conn, key []byte) {
 
 func (this *Server) OS(conn net.Conn, content []byte) {
 	//针对key:value设置
-	contents := bytes.Split(content, delimit2)
+	contents := bytes.SplitN(content, delimit2, 2)
 	if len(contents) == 2 {
 		var modelx Modelx
-		//开始解码数据集
-		if err := msgpack.Unmarshal(contents[1], &modelx); err == nil {
-			this.store.Save(contents[0], modelx)
-			conn.Write(reply([]byte("1")))
-			return
+		//开始解码数据
+		if modelx, ok := unmarshaler(contents[1], modelx); ok {
+			//开始校验数据
+			if mdx, ok := valid(modelx); ok {
+				//开始保存数据集合
+				if ok := this.store.Save(contents[0], mdx); ok {
+					conn.Write(reply([]byte("1")))
+					return
+				}
+			} else {
+				fmt.Println(ok)
+			}
 		}
 	}
 	conn.Write(reply([]byte("0")))
@@ -66,7 +64,7 @@ func (this *Server) OF(conn net.Conn, key []byte) {
 	query := &Query{store: this.store}
 	query.Init(key)
 	content := query.Filter()
-	if marsher, err := this.marshaler(content); err == nil {
+	if marsher, ok := marshaler(content); ok {
 		conn.Write(reply(marsher))
 	}
 

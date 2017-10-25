@@ -2,8 +2,7 @@ package main
 
 import (
 	"bufio"
-	//"bytes"
-	"fmt"
+	"bytes"
 	"log"
 	"net"
 	"reflect"
@@ -43,18 +42,24 @@ func (this *Server) handle(conn net.Conn, message []byte) {
 }
 
 func (this *Server) recvCommand(conn net.Conn) {
-	scanner := bufio.NewScanner(conn)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-	scanner.Split(crunchSplitFunc)
-	for scanner.Scan() {
-		content := scanner.Bytes()
-		this.handle(conn, content)
-	}
-	if err := scanner.Err(); err != nil {
-		fmt.Println("recvComand", err)
-	}
+	reader := bufio.NewReader(conn)
+	var buff bytes.Buffer
+	for {
+		content, err := reader.ReadBytes('\n')
+		if len(content) > 0 {
+			buff.Write(content)
+			//计算长度
+			if bytes.HasSuffix(content, delimit) {
+				command := buff.Bytes()
+				this.handle(conn, bytes.TrimSuffix(command, delimit))
+				buff.Reset()
+			}
+		}
+		if err != nil {
+			break
+		}
 
+	}
 }
 
 func (this *Server) registerCommand() {
